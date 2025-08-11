@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { getRandomPosition, MIN_HEIGHT, MIN_WIDTH } from "./helpers";
 
 interface Window {
   id: string;
@@ -10,29 +11,38 @@ interface Window {
 }
 
 const getId = () => Math.random().toString(36).substring(2, 9);
+
 const getRandomColor = () =>
   `hsl(${Math.floor(Math.random() * 360)}, 70%, 60%)`;
 
 function App() {
+  const containerRef = useRef<HTMLDivElement>(null);
   const [windows, setWindows] = useState<Window[]>([]);
   console.log(windows);
 
   const createWindow = () => {
+    if (containerRef.current === null) {
+      return;
+    }
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const { x, y } = getRandomPosition(rect.width, rect.height);
     const newWindow: Window = {
       id: getId(),
-      x: 100,
-      y: 100,
-      width: 300,
-      height: 200,
+      x,
+      y,
+      width: MIN_WIDTH,
+      height: MIN_HEIGHT,
       color: getRandomColor(),
     };
     setWindows((curWindows) => [...curWindows, newWindow]);
   };
 
   return (
-    <div className="w-screen h-screen relative">
+    <div ref={containerRef} className="w-screen h-screen relative">
       {windows.map((window, i) => (
         <div
+          key={window.id}
           className="absolute"
           style={{
             left: window.x,
