@@ -18,6 +18,7 @@ const getRandomColor = () =>
 function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [windows, setWindows] = useState<Window[]>([]);
+  const [draggedWindowId, setDraggedWindowId] = useState<string | null>(null);
 
   const createWindow = () => {
     if (containerRef.current === null) {
@@ -41,8 +42,55 @@ function App() {
     setWindows((curWindows) => curWindows.filter((window) => window.id !== id));
   };
 
+  const handleMouseDown = (
+    e: React.MouseEvent<HTMLDivElement, MouseEvent>,
+    id: string
+  ) => {
+    setDraggedWindowId(id);
+    setWindows((curWindows) =>
+      curWindows.map((window) => {
+        if (window.id !== id) {
+          return window;
+        }
+
+        return {
+          ...window,
+          x: e.clientX,
+          y: e.clientY,
+        };
+      })
+    );
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
+    if (draggedWindowId) {
+      setWindows((curWindows) =>
+        curWindows.map((window) => {
+          if (window.id !== draggedWindowId) {
+            return window;
+          }
+
+          return {
+            ...window,
+            x: e.clientX,
+            y: e.clientY,
+          };
+        })
+      );
+    }
+  };
+
+  const handleMouseUp = () => {
+    setDraggedWindowId(null);
+  };
+
   return (
-    <div ref={containerRef} className="w-screen h-screen relative">
+    <div
+      ref={containerRef}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      className="w-screen h-screen relative"
+    >
       {windows.map((window, i) => (
         <div
           key={window.id}
@@ -55,10 +103,14 @@ function App() {
             backgroundColor: window.color,
           }}
         >
-          <div className="h-[50px] bg-black flex justify-end">
+          <div className="h-[50px] flex justify-between">
+            <div
+              onMouseDown={(e) => handleMouseDown(e, window.id)}
+              className="bg-black h-full w-full"
+            />
             <button
               onClick={() => deleteWindow(window.id)}
-              className="bg-red-500 text-white h-full px-4 cursor-pointer"
+              className="bg-red-800 text-white h-full w-[50px] cursor-pointer"
             >
               X
             </button>
