@@ -19,6 +19,9 @@ function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [windows, setWindows] = useState<Window[]>([]);
   const [draggedWindowId, setDraggedWindowId] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number } | null>(
+    null
+  );
 
   const createWindow = () => {
     if (containerRef.current === null) {
@@ -47,23 +50,34 @@ function App() {
     id: string
   ) => {
     setDraggedWindowId(id);
-    setWindows((curWindows) =>
-      curWindows.map((window) => {
-        if (window.id !== id) {
-          return window;
-        }
+    
+    const draggedWindow = windows.find((window) => window.id === id);
+    if (draggedWindow) {
+      setDragOffset({
+        x: e.clientX - draggedWindow.x,
+        y: e.clientY - draggedWindow.y,
+      });
+    }
 
-        return {
-          ...window,
-          x: e.clientX,
-          y: e.clientY,
-        };
-      })
-    );
+    if (dragOffset) {
+      setWindows((curWindows) =>
+        curWindows.map((window) => {
+          if (window.id !== id) {
+            return window;
+          }
+
+          return {
+            ...window,
+            x: e.clientX - dragOffset.x,
+            y: e.clientY - dragOffset.y,
+          };
+        })
+      );
+    }
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
-    if (draggedWindowId) {
+    if (draggedWindowId && dragOffset) {
       setWindows((curWindows) =>
         curWindows.map((window) => {
           if (window.id !== draggedWindowId) {
@@ -72,8 +86,8 @@ function App() {
 
           return {
             ...window,
-            x: e.clientX,
-            y: e.clientY,
+            x: e.clientX - dragOffset.x,
+            y: e.clientY - dragOffset.y,
           };
         })
       );
@@ -82,6 +96,7 @@ function App() {
 
   const handleMouseUp = () => {
     setDraggedWindowId(null);
+    setDragOffset(null);
   };
 
   return (
