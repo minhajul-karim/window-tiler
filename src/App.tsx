@@ -18,7 +18,6 @@ const getRandomColor = () =>
 function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [windows, setWindows] = useState<Window[]>([]);
-  console.log(windows);
 
   const createWindow = () => {
     if (containerRef.current === null) {
@@ -38,6 +37,10 @@ function App() {
     setWindows((curWindows) => [...curWindows, newWindow]);
   };
 
+  const deleteWindow = (id: string) => {
+    setWindows((curWindows) => curWindows.filter((window) => window.id !== id));
+  };
+
   return (
     <div ref={containerRef} className="w-screen h-screen relative">
       {windows.map((window, i) => (
@@ -52,6 +55,14 @@ function App() {
             backgroundColor: window.color,
           }}
         >
+          <div className="h-[50px] bg-black flex justify-end">
+            <button
+              onClick={() => deleteWindow(window.id)}
+              className="bg-red-500 text-white h-full px-4 cursor-pointer"
+            >
+              X
+            </button>
+          </div>
           Node {i + 1}
         </div>
       ))}
