@@ -12,6 +12,7 @@ interface Window {
 
 const SNAP_WIDTH = 30;
 const SNAP_HEIGHT = 30;
+const SNAP_INDICATOR = 100;
 
 const getId = () => Math.random().toString(36).substring(2, 9);
 
@@ -133,28 +134,28 @@ function App() {
         top: 0,
         bottom: 0,
         left: 0,
-        right: right - SNAP_WIDTH,
+        right: right - SNAP_INDICATOR,
       });
     } else if (draggedWindow.x + draggedWindow.width >= right - SNAP_WIDTH) {
       // Snapping indicator on the right
       setSnapIndicator({
         top: 0,
         bottom: 0,
-        left: right - SNAP_WIDTH,
+        left: right - SNAP_INDICATOR,
         right: 0,
       });
     } else if (draggedWindow.y <= top + SNAP_HEIGHT) {
       // Snapping indicator on the top
       setSnapIndicator({
         top: 0,
-        bottom: bottom - SNAP_HEIGHT,
+        bottom: bottom - SNAP_INDICATOR,
         left: 0,
         right: 0,
       });
     } else if (draggedWindow.y + draggedWindow.height >= bottom - SNAP_HEIGHT) {
       // Snapping indicator on the bottom
       setSnapIndicator({
-        top: bottom - SNAP_HEIGHT,
+        top: bottom - SNAP_INDICATOR,
         bottom: 0,
         left: 0,
         right: 0,
@@ -186,7 +187,11 @@ function App() {
           <div className="h-[50px] flex justify-between">
             <div
               onMouseDown={(e) => handleMouseDown(e, window.id)}
-              className="bg-black h-full w-full"
+              className={`bg-black h-full w-full ${
+                window.id === draggedWindowId
+                  ? "cursor-grabbing"
+                  : "cursor-grab"
+              }`}
             />
             <button
               onClick={() => deleteWindow(window.id)}
