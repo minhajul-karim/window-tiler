@@ -228,35 +228,17 @@ function App() {
 
   useEffect(() => {
     if (containerRef.current) {
-      const SNAPPED_WINDOWS = {
+      setSnappedWindows({
         root: {
           x: 0,
           y: 0,
           width: containerRef.current.getBoundingClientRect().width,
           height: containerRef.current.getBoundingClientRect().height,
           background: "none",
-          left: {
-            x: 0,
-            y: 0,
-            width: containerRef.current.getBoundingClientRect().width / 2,
-            height: containerRef.current.getBoundingClientRect().height,
-            background: getRandomColor(),
-            left: null,
-            right: null,
-          },
-          right: {
-            x: containerRef.current.getBoundingClientRect().width / 2,
-            y: 0,
-            width: containerRef.current.getBoundingClientRect().width / 2,
-            height: containerRef.current.getBoundingClientRect().height,
-            background: getRandomColor(),
-            left: null,
-            right: null,
-          },
+          left: null,
+          right: null,
         },
-      };
-
-      setSnappedWindows(SNAPPED_WINDOWS as any);
+      });
     }
   }, [containerRef.current]);
 
