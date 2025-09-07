@@ -80,6 +80,8 @@ function Claude() {
   const [snapIndicator, setSnapIndicator] = useState<SnapIndicator | null>(
     null
   );
+  const [lastSnapDirection, setLastSnapDirection] = useState("");
+  console.log("lastSnapDirection", lastSnapDirection);
 
   // Helper functions
   const createWindow = useCallback(
@@ -340,6 +342,7 @@ function Claude() {
 
   // Snap execution
   const executeSnap = (windowData: WindowData, indicator: SnapIndicator) => {
+    console.log("indi >>", indicator);
     if (!containerRef.current) return;
 
     const containerRect = containerRef.current.getBoundingClientRect();
@@ -360,7 +363,13 @@ function Claude() {
         id: windowData.id,
         type: "window",
         window: windowData,
-        bounds: { x: 0, y: 0, width: 1, height: 1 },
+        // bounds: { x: 0, y: 0, width: 1, height: 1 },
+        bounds: {
+          x: indicator.x,
+          y: indicator.y,
+          width: indicator.width,
+          height: indicator.height,
+        },
       };
 
       if (snappedLayout) {
@@ -386,15 +395,15 @@ function Claude() {
         };
 
         // Update child bounds
-        containerNode.container!.children[0].bounds =
-          direction === "horizontal"
-            ? { x: 0, y: 0, width: 0.5, height: 1 }
-            : { x: 0, y: 0, width: 1, height: 0.5 };
+        // containerNode.container!.children[0].bounds =
+        //   direction === "horizontal"
+        //     ? { x: 0, y: 0, width: 0.5, height: 1 }
+        //     : { x: 0, y: 0, width: 1, height: 0.5 };
 
-        containerNode.container!.children[1].bounds =
-          direction === "horizontal"
-            ? { x: 0.5, y: 0, width: 0.5, height: 1 }
-            : { x: 0, y: 0.5, width: 1, height: 0.5 };
+        // containerNode.container!.children[1].bounds =
+        //   direction === "horizontal"
+        //     ? { x: 0.5, y: 0, width: 0.5, height: 1 }
+        //     : { x: 0, y: 0.5, width: 1, height: 0.5 };
 
         setSnappedLayout(containerNode);
       } else {
@@ -570,6 +579,7 @@ function Claude() {
     }
 
     setDraggedWindow(null);
+    setLastSnapDirection(snapIndicator?.side ?? "");
     setSnapIndicator(null);
   };
 
@@ -578,8 +588,8 @@ function Claude() {
     node: SnapNode,
     parentBounds: { x: number; y: number; width: number; height: number }
   ): JSX.Element => {
+    // TODO: DO WE NEED IT?
     const absolutePos = calculateAbsolutePosition(node, parentBounds);
-    console.log("absolutePos", absolutePos);
 
     if (node.type === "window" && node.window) {
       return (
@@ -587,10 +597,10 @@ function Claude() {
           key={node.id}
           className="absolute border border-gray-300"
           style={{
-            left: absolutePos.x,
-            top: absolutePos.y,
-            width: absolutePos.width,
-            height: absolutePos.height,
+            left: node.bounds.x,
+            top: node.bounds.y,
+            width: node.bounds.width,
+            height: node.bounds.height,
             backgroundColor: node.window.color,
           }}
         >
@@ -635,11 +645,12 @@ function Claude() {
     >
       {/* Snapped windows */}
       {snappedLayout &&
+        containerRef.current &&
         renderSnappedNode(snappedLayout, {
           x: 0,
           y: 0,
-          width: containerRef.current?.clientWidth || window.innerWidth,
-          height: containerRef.current?.clientHeight || window.innerHeight,
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight,
         })}
 
       {/* Floating windows */}
@@ -682,7 +693,7 @@ function Claude() {
       {/* Add button */}
       <button
         onClick={addFloatingWindow}
-        className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-2xl shadow-lg transition-colors"
+        className="cursor-pointer fixed bottom-6 right-6 w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-2xl shadow-lg transition-colors"
       >
         +
       </button>
