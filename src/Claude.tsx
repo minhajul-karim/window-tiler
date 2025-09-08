@@ -137,10 +137,9 @@ function Claude() {
     if (!node) return null;
 
     if (node.type === "container" && node.container) {
-      const children = node.container.children.filter((child) => {
-        if (child.id === id) return false;
-        return true;
-      });
+      const children = node.container.children.filter(
+        (child) => child.id !== id
+      );
 
       // Remove nested nodes recursively
       const updatedChildren = children
@@ -152,11 +151,18 @@ function Claude() {
       } else if (updatedChildren.length === 1) {
         // If only one child remains, promote it
         const remaining = updatedChildren[0];
+        console.log("rem >>", remaining);
         return {
           ...remaining,
-          bounds: node.bounds,
+          bounds: {
+            x: node.bounds.x, // Keep container's position
+            y: node.bounds.y,
+            width: node.bounds.width, // Expand to container's full size
+            height: node.bounds.height,
+          },
         };
       } else {
+        alert("elseeee...");
         return {
           ...node,
           container: {
@@ -171,20 +177,8 @@ function Claude() {
   };
 
   const deleteSnappedWindow = (id: string) => {
+    console.log("deleting snap wind " + id);
     setSnappedLayout((prev) => removeNodeById(prev, id));
-  };
-
-  // Calculate absolute positions for rendering
-  const calculateAbsolutePosition = (
-    node: SnapNode,
-    parentBounds: { x: number; y: number; width: number; height: number }
-  ) => {
-    return {
-      x: parentBounds.x + node.bounds.x * parentBounds.width,
-      y: parentBounds.y + node.bounds.y * parentBounds.height,
-      width: node.bounds.width * parentBounds.width,
-      height: node.bounds.height * parentBounds.height,
-    };
   };
 
   // Snap detection
@@ -238,18 +232,7 @@ function Claude() {
 
     // Check snapped window regions
     if (snappedLayout) {
-      const containerBounds = {
-        x: 0,
-        y: 0,
-        width: containerRect.width,
-        height: containerRect.height,
-      };
-      const snapTarget = findSnapTargetInNode(
-        snappedLayout,
-        mouseX,
-        mouseY,
-        containerBounds
-      );
+      const snapTarget = findSnapTargetInNode(snappedLayout, mouseX, mouseY);
       if (snapTarget) return snapTarget;
     }
 
@@ -259,44 +242,41 @@ function Claude() {
   const findSnapTargetInNode = (
     node: SnapNode,
     mouseX: number,
-    mouseY: number,
-    parentBounds: { x: number; y: number; width: number; height: number }
+    mouseY: number
   ): SnapIndicator | null => {
-    const absolutePos = calculateAbsolutePosition(node, parentBounds);
-
-    // Check if mouse is within this node's bounds
+    // Check if mouse is within this node's bounds (using absolute coordinates)
     if (
-      mouseX >= absolutePos.x &&
-      mouseX <= absolutePos.x + absolutePos.width &&
-      mouseY >= absolutePos.y &&
-      mouseY <= absolutePos.y + absolutePos.height
+      mouseX >= node.bounds.x &&
+      mouseX <= node.bounds.x + node.bounds.width &&
+      mouseY >= node.bounds.y &&
+      mouseY <= node.bounds.y + node.bounds.height
     ) {
       if (node.type === "window") {
         // For windows, check which edge is closest
         const threshold = SNAP_THRESHOLD;
-        const relativeX = mouseX - absolutePos.x;
-        const relativeY = mouseY - absolutePos.y;
+        const relativeX = mouseX - node.bounds.x;
+        const relativeY = mouseY - node.bounds.y;
 
         // Determine the longer axis for snapping
-        const isWiderThanTall = absolutePos.width > absolutePos.height;
+        const isWiderThanTall = node.bounds.width > node.bounds.height;
 
         if (isWiderThanTall) {
           // Snap on top or bottom
           if (relativeY <= threshold) {
             return {
-              x: absolutePos.x,
-              y: absolutePos.y,
-              width: absolutePos.width,
-              height: absolutePos.height / 2,
+              x: node.bounds.x,
+              y: node.bounds.y,
+              width: node.bounds.width,
+              height: node.bounds.height / 2,
               side: "top",
               targetNodeId: node.id,
             };
-          } else if (relativeY >= absolutePos.height - threshold) {
+          } else if (relativeY >= node.bounds.height - threshold) {
             return {
-              x: absolutePos.x,
-              y: absolutePos.y + absolutePos.height / 2,
-              width: absolutePos.width,
-              height: absolutePos.height / 2,
+              x: node.bounds.x,
+              y: node.bounds.y + node.bounds.height / 2,
+              width: node.bounds.width,
+              height: node.bounds.height / 2,
               side: "bottom",
               targetNodeId: node.id,
             };
@@ -305,19 +285,19 @@ function Claude() {
           // Snap on left or right
           if (relativeX <= threshold) {
             return {
-              x: absolutePos.x,
-              y: absolutePos.y,
-              width: absolutePos.width / 2,
-              height: absolutePos.height,
+              x: node.bounds.x,
+              y: node.bounds.y,
+              width: node.bounds.width / 2,
+              height: node.bounds.height,
               side: "left",
               targetNodeId: node.id,
             };
-          } else if (relativeX >= absolutePos.width - threshold) {
+          } else if (relativeX >= node.bounds.width - threshold) {
             return {
-              x: absolutePos.x + absolutePos.width / 2,
-              y: absolutePos.y,
-              width: absolutePos.width / 2,
-              height: absolutePos.height,
+              x: node.bounds.x + node.bounds.width / 2,
+              y: node.bounds.y,
+              width: node.bounds.width / 2,
+              height: node.bounds.height,
               side: "right",
               targetNodeId: node.id,
             };
@@ -326,12 +306,7 @@ function Claude() {
       } else if (node.type === "container" && node.container) {
         // Recursively check children
         for (const child of node.container.children) {
-          const result = findSnapTargetInNode(
-            child,
-            mouseX,
-            mouseY,
-            absolutePos
-          );
+          const result = findSnapTargetInNode(child, mouseX, mouseY);
           if (result) return result;
         }
       }
@@ -342,7 +317,6 @@ function Claude() {
 
   // Snap execution
   const executeSnap = (windowData: WindowData, indicator: SnapIndicator) => {
-    console.log("indi >>", indicator);
     if (!containerRef.current) return;
 
     const containerRect = containerRef.current.getBoundingClientRect();
@@ -363,7 +337,6 @@ function Claude() {
         id: windowData.id,
         type: "window",
         window: windowData,
-        // bounds: { x: 0, y: 0, width: 1, height: 1 },
         bounds: {
           x: indicator.x,
           y: indicator.y,
@@ -391,23 +364,54 @@ function Claude() {
               : [snappedLayout, newWindowNode],
             splitRatio: 0.5,
           },
-          bounds: { x: 0, y: 0, width: 1, height: 1 },
+          bounds: {
+            x: 0,
+            y: 0,
+            width: containerRect.width,
+            height: containerRect.height,
+          },
         };
 
-        // Update child bounds
-        // containerNode.container!.children[0].bounds =
-        //   direction === "horizontal"
-        //     ? { x: 0, y: 0, width: 0.5, height: 1 }
-        //     : { x: 0, y: 0, width: 1, height: 0.5 };
+        // Update child bounds to absolute coordinates
+        if (direction === "horizontal" && containerNode.container) {
+          containerNode.container.children[0].bounds = {
+            x: 0,
+            y: 0,
+            width: containerRect.width / 2,
+            height: containerRect.height,
+          };
 
-        // containerNode.container!.children[1].bounds =
-        //   direction === "horizontal"
-        //     ? { x: 0.5, y: 0, width: 0.5, height: 1 }
-        //     : { x: 0, y: 0.5, width: 1, height: 0.5 };
+          containerNode.container.children[1].bounds = {
+            x: containerRect.width / 2,
+            y: 0,
+            width: containerRect.width / 2,
+            height: containerRect.height,
+          };
+        } else if (direction === "vertical" && containerNode.container) {
+          containerNode.container.children[0].bounds = {
+            x: 0,
+            y: 0,
+            width: containerRect.width,
+            height: containerRect.height / 2,
+          };
+
+          containerNode.container.children[1].bounds = {
+            x: 0,
+            y: containerRect.height / 2,
+            width: containerRect.width,
+            height: containerRect.height / 2,
+          };
+        }
 
         setSnappedLayout(containerNode);
       } else {
-        // First snapped window
+        // First snapped window - takes full screen initially
+        newWindowNode.bounds = {
+          x: 0,
+          y: 0,
+          width: containerRect.width,
+          height: containerRect.height,
+        };
         setSnappedLayout(newWindowNode);
       }
     }
@@ -431,12 +435,12 @@ function Claude() {
         id: newWindow.id,
         type: "window",
         window: newWindow,
-        bounds: { x: 0, y: 0, width: 1, height: 1 },
+        bounds: { x: 0, y: 0, width: 0, height: 0 }, // Will be updated below
       };
 
       const existingWindowNode: SnapNode = {
         ...layout,
-        bounds: { x: 0, y: 0, width: 1, height: 1 },
+        bounds: { x: 0, y: 0, width: 0, height: 0 }, // Will be updated below
       };
 
       const containerNode: SnapNode = {
@@ -449,19 +453,42 @@ function Claude() {
             : [existingWindowNode, newWindowNode],
           splitRatio: 0.5,
         },
-        bounds: layout.bounds,
+        bounds: layout.bounds, // Keep the original window's bounds
       };
 
-      // Update child bounds
-      containerNode.container!.children[0].bounds =
-        direction === "horizontal"
-          ? { x: 0, y: 0, width: 0.5, height: 1 }
-          : { x: 0, y: 0, width: 1, height: 0.5 };
+      // Update child bounds to absolute coordinates
+      if (!containerNode.container) {
+        return null
+      }
+      if (direction === "horizontal") {
+        containerNode.container.children[0].bounds = {
+          x: layout.bounds.x,
+          y: layout.bounds.y,
+          width: layout.bounds.width / 2,
+          height: layout.bounds.height,
+        };
 
-      containerNode.container!.children[1].bounds =
-        direction === "horizontal"
-          ? { x: 0.5, y: 0, width: 0.5, height: 1 }
-          : { x: 0, y: 0.5, width: 1, height: 0.5 };
+        containerNode.container.children[1].bounds = {
+          x: layout.bounds.x + layout.bounds.width / 2,
+          y: layout.bounds.y,
+          width: layout.bounds.width / 2,
+          height: layout.bounds.height,
+        };
+      } else {
+        containerNode.container.children[0].bounds = {
+          x: layout.bounds.x,
+          y: layout.bounds.y,
+          width: layout.bounds.width,
+          height: layout.bounds.height / 2,
+        };
+
+        containerNode.container.children[1].bounds = {
+          x: layout.bounds.x,
+          y: layout.bounds.y + layout.bounds.height / 2,
+          width: layout.bounds.width,
+          height: layout.bounds.height / 2,
+        };
+      }
 
       return containerNode;
     } else if (layout.type === "container" && layout.container) {
@@ -583,24 +610,17 @@ function Claude() {
     setSnapIndicator(null);
   };
 
-  // Rendering functions
-  const renderSnappedNode = (
-    node: SnapNode,
-    parentBounds: { x: number; y: number; width: number; height: number }
-  ): JSX.Element => {
-    // TODO: DO WE NEED IT?
-    const absolutePos = calculateAbsolutePosition(node, parentBounds);
-
+  const renderSnappedNode = (node: SnapNode): JSX.Element => {
     if (node.type === "window" && node.window) {
       return (
         <div
           key={node.id}
           className="absolute border border-gray-300"
           style={{
-            left: node.bounds.x,
-            top: node.bounds.y,
-            width: node.bounds.width,
-            height: node.bounds.height,
+            left: node.bounds.x, // Direct use - no conversion needed!
+            top: node.bounds.y, // Direct use - no conversion needed!
+            width: node.bounds.width, // Direct use - no conversion needed!
+            height: node.bounds.height, // Direct use - no conversion needed!
             backgroundColor: node.window.color,
           }}
         >
@@ -626,9 +646,7 @@ function Claude() {
     } else if (node.type === "container" && node.container) {
       return (
         <div key={node.id}>
-          {node.container.children.map((child) =>
-            renderSnappedNode(child, absolutePos)
-          )}
+          {node.container.children.map((child) => renderSnappedNode(child))}
         </div>
       );
     }
@@ -646,12 +664,7 @@ function Claude() {
       {/* Snapped windows */}
       {snappedLayout &&
         containerRef.current &&
-        renderSnappedNode(snappedLayout, {
-          x: 0,
-          y: 0,
-          width: containerRef.current.clientWidth,
-          height: containerRef.current.clientHeight,
-        })}
+        renderSnappedNode(snappedLayout)}
 
       {/* Floating windows */}
       {floatingWindows.map((window) => (
