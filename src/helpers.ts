@@ -14,3 +14,49 @@ export function getRandomPosition(
 
   return { x, y };
 }
+
+interface WindowConfig {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export function getWindowConfig(
+  position: string,
+  containerRect: DOMRect
+): WindowConfig {
+  switch (position) {
+    case "left":
+      return {
+        x: 0,
+        y: 0,
+        width: containerRect.width / 2,
+        height: containerRect.height,
+      };
+    case "right":
+      return {
+        x: containerRect.width / 2,
+        y: 0,
+        width: containerRect.width / 2,
+        height: containerRect.height,
+      };
+    case "top":
+      return {
+        x: 0,
+        y: 0,
+        width: containerRect.width,
+        height: containerRect.height / 2,
+      };
+    case "bottom":
+      return {
+        x: 0,
+        y: containerRect.height / 2,
+        width: containerRect.width,
+        height: containerRect.height / 2,
+      };
+
+    default:
+      return { x: 0, y: 0, width: 0, height: 0 };
+  }
+}

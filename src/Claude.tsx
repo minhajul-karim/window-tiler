@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, type JSX } from "react";
+import { getWindowConfig } from "./helpers";
 
 // Types
 interface WindowData {
@@ -69,9 +70,7 @@ const getRandomPosition = (
 function Claude() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [floatingWindows, setFloatingWindows] = useState<FloatingWindow[]>([]);
-  console.log("floatingWindows", floatingWindows);
   const [snappedLayout, setSnappedLayout] = useState<SnapNode | null>(null);
-  console.log("snappedLayout", snappedLayout);
   const [draggedWindow, setDraggedWindow] = useState<{
     id: string;
     type: "floating" | "snapped";
@@ -80,8 +79,6 @@ function Claude() {
   const [snapIndicator, setSnapIndicator] = useState<SnapIndicator | null>(
     null
   );
-  const [lastSnapDirection, setLastSnapDirection] = useState("");
-  console.log("lastSnapDirection", lastSnapDirection);
 
   // Helper functions
   const createWindow = useCallback(
@@ -151,7 +148,6 @@ function Claude() {
       } else if (updatedChildren.length === 1) {
         // If only one child remains, promote it
         const remaining = updatedChildren[0];
-        console.log("rem >>", remaining);
         return {
           ...remaining,
           bounds: {
@@ -162,7 +158,6 @@ function Claude() {
           },
         };
       } else {
-        alert("elseeee...");
         return {
           ...node,
           container: {
@@ -177,7 +172,6 @@ function Claude() {
   };
 
   const deleteSnappedWindow = (id: string) => {
-    console.log("deleting snap wind " + id);
     setSnappedLayout((prev) => removeNodeById(prev, id));
   };
 
@@ -374,44 +368,35 @@ function Claude() {
 
         // Update child bounds to absolute coordinates
         if (direction === "horizontal" && containerNode.container) {
-          containerNode.container.children[0].bounds = {
-            x: 0,
-            y: 0,
-            width: containerRect.width / 2,
-            height: containerRect.height,
-          };
+          // Horizontal left
+          containerNode.container.children[0].bounds = getWindowConfig(
+            "left",
+            containerRect
+          );
 
-          containerNode.container.children[1].bounds = {
-            x: containerRect.width / 2,
-            y: 0,
-            width: containerRect.width / 2,
-            height: containerRect.height,
-          };
+          // Horizontal right
+          containerNode.container.children[1].bounds = getWindowConfig(
+            "right",
+            containerRect
+          );
         } else if (direction === "vertical" && containerNode.container) {
-          containerNode.container.children[0].bounds = {
-            x: 0,
-            y: 0,
-            width: containerRect.width,
-            height: containerRect.height / 2,
-          };
+          // Vertical top
+          containerNode.container.children[0].bounds = getWindowConfig(
+            "top",
+            containerRect
+          );
 
-          containerNode.container.children[1].bounds = {
-            x: 0,
-            y: containerRect.height / 2,
-            width: containerRect.width,
-            height: containerRect.height / 2,
-          };
+          // Vertical bottom
+          containerNode.container.children[1].bounds = getWindowConfig(
+            "bottom",
+            containerRect
+          );
         }
 
         setSnappedLayout(containerNode);
       } else {
-        // First snapped window - takes full screen initially
-        newWindowNode.bounds = {
-          x: 0,
-          y: 0,
-          width: containerRect.width,
-          height: containerRect.height,
-        };
+        // First snapped window
+        newWindowNode.bounds = getWindowConfig(indicator.side, containerRect);
         setSnappedLayout(newWindowNode);
       }
     }
@@ -458,7 +443,7 @@ function Claude() {
 
       // Update child bounds to absolute coordinates
       if (!containerNode.container) {
-        return null
+        return null;
       }
       if (direction === "horizontal") {
         containerNode.container.children[0].bounds = {
@@ -606,7 +591,6 @@ function Claude() {
     }
 
     setDraggedWindow(null);
-    setLastSnapDirection(snapIndicator?.side ?? "");
     setSnapIndicator(null);
   };
 
