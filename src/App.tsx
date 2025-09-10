@@ -1,273 +1,660 @@
-import { useState, useRef, useEffect } from "react";
-import { getRandomPosition, MIN_HEIGHT, MIN_WIDTH } from "./helpers";
+import React, { useState, useRef, useCallback, type JSX } from "react";
+import { getWindowConfig } from "./helpers";
 
-interface FloatingWindow {
+// Types
+interface WindowData {
   id: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
   color: string;
+  title: string;
 }
 
-interface SnappedDiv {
+interface SnapNode {
   id: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  background: string;
-}
-interface SnappedWindow {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  background: string;
-  left: SnappedWindow | null;
-  right: SnappedWindow | null;
+  type: "window" | "container";
+
+  // For windows
+  window?: WindowData;
+
+  // For containers (snap groups)
+  container?: {
+    direction: "horizontal" | "vertical";
+    children: SnapNode[];
+    splitRatio: number; // 0.5 = 50/50 split
+  };
+
+  // Bounds (relative to parent)
+  bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
 }
 
-interface SnappedWindows {
-  root: SnappedWindow | null;
+interface FloatingWindow extends WindowData {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 interface SnapIndicator {
-  top: number;
-  bottom: number;
-  left: number;
-  right: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  side: "top" | "bottom" | "left" | "right";
+  targetNodeId?: string;
 }
 
-const SNAP_WIDTH = 30;
-const SNAP_HEIGHT = 30;
-const SNAP_INDICATOR = 100;
+// Constants
+const MIN_WIDTH = 200;
+const MIN_HEIGHT = 150;
+const SNAP_THRESHOLD = 30;
+const DRAG_OUT_THRESHOLD = 50;
+const HEADER_HEIGHT = 40;
 
+// Utilities
 const getId = () => Math.random().toString(36).substring(2, 9);
-
 const getRandomColor = () =>
   `hsl(${Math.floor(Math.random() * 360)}, 70%, 60%)`;
 
-function App() {
+const getRandomPosition = (
+  containerWidth: number,
+  containerHeight: number
+) => ({
+  x: Math.random() * (containerWidth - MIN_WIDTH),
+  y: Math.random() * (containerHeight - MIN_HEIGHT),
+});
+
+export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [floatingWindows, setFloatingWindows] = useState<FloatingWindow[]>([]);
-  const [snappedWindows, setSnappedWindows] = useState<SnappedWindows>({
-    root: null,
-  });
-  const [snappedWindowsArr, setSnappedWindowsArr] = useState<SnappedDiv[]>([]);
-  const [draggedWindowId, setDraggedWindowId] = useState<string | null>(null);
-  const [dragOffset, setDragOffset] = useState<{ x: number; y: number } | null>(
-    null
-  );
+  const [snappedLayout, setSnappedLayout] = useState<SnapNode | null>(null);
+  const [draggedWindow, setDraggedWindow] = useState<{
+    id: string;
+    type: "floating" | "snapped";
+    offset: { x: number; y: number };
+  } | null>(null);
   const [snapIndicator, setSnapIndicator] = useState<SnapIndicator | null>(
     null
   );
 
-  const createWindow = () => {
-    if (containerRef.current === null) {
-      return;
-    }
+  // Helper functions
+  const createWindow = useCallback(
+    (): WindowData => ({
+      id: getId(),
+      color: getRandomColor(),
+      title: `Window ${Date.now()}`,
+    }),
+    []
+  );
+
+  const addFloatingWindow = () => {
+    if (!containerRef.current) return;
 
     const rect = containerRef.current.getBoundingClientRect();
     const { x, y } = getRandomPosition(rect.width, rect.height);
+    const windowData = createWindow();
+
     const newWindow: FloatingWindow = {
-      id: getId(),
+      ...windowData,
       x,
       y,
       width: MIN_WIDTH,
       height: MIN_HEIGHT,
-      color: getRandomColor(),
     };
-    setFloatingWindows((curWindows) => [...curWindows, newWindow]);
+
+    setFloatingWindows((prev) => [...prev, newWindow]);
   };
 
-  const deleteWindow = (id: string) => {
-    setFloatingWindows((curWindows) =>
-      curWindows.filter((window) => window.id !== id)
-    );
+  const deleteFloatingWindow = (id: string) => {
+    setFloatingWindows((prev) => prev.filter((w) => w.id !== id));
   };
 
-  const handleMouseDown = (
-    e: React.MouseEvent<HTMLDivElement, MouseEvent>,
+  // Tree manipulation functions
+  const findNodeById = (node: SnapNode | null, id: string): SnapNode | null => {
+    if (!node) return null;
+    if (node.id === id) return node;
+
+    if (node.type === "container" && node.container) {
+      for (const child of node.container.children) {
+        const found = findNodeById(child, id);
+        if (found) return found;
+      }
+    }
+
+    return null;
+  };
+
+  const removeNodeById = (
+    node: SnapNode | null,
     id: string
-  ) => {
-    setDraggedWindowId(id);
+  ): SnapNode | null => {
+    if (!node) return null;
 
-    const draggedWindow = floatingWindows.find((window) => window.id === id);
-    if (draggedWindow) {
-      setDragOffset({
-        x: e.clientX - draggedWindow.x,
-        y: e.clientY - draggedWindow.y,
-      });
+    if (node.type === "container" && node.container) {
+      const children = node.container.children.filter(
+        (child) => child.id !== id
+      );
+
+      // Remove nested nodes recursively
+      const updatedChildren = children
+        .map((child) => removeNodeById(child, id))
+        .filter(Boolean) as SnapNode[];
+
+      if (updatedChildren.length === 0) {
+        return null;
+      } else if (updatedChildren.length === 1) {
+        // If only one child remains, promote it
+        const remaining = updatedChildren[0];
+        return {
+          ...remaining,
+          bounds: {
+            x: node.bounds.x, // Keep container's position
+            y: node.bounds.y,
+            width: node.bounds.width, // Expand to container's full size
+            height: node.bounds.height,
+          },
+        };
+      } else {
+        return {
+          ...node,
+          container: {
+            ...node.container,
+            children: updatedChildren,
+          },
+        };
+      }
     }
 
-    if (dragOffset) {
-      setFloatingWindows((curWindows) =>
-        curWindows.map((window) => {
-          if (window.id !== id) {
-            return window;
-          }
+    return node.id === id ? null : node;
+  };
 
-          return {
-            ...window,
-            x: e.clientX - dragOffset.x,
-            y: e.clientY - dragOffset.y,
-          };
-        })
+  const deleteSnappedWindow = (id: string) => {
+    setSnappedLayout((prev) => removeNodeById(prev, id));
+  };
+
+  // Snap detection
+  const getSnapTarget = (
+    mouseX: number,
+    mouseY: number,
+    containerRect: DOMRect
+  ): SnapIndicator | null => {
+    const threshold = SNAP_THRESHOLD;
+
+    // Check screen edges first
+    if (mouseX <= threshold) {
+      return {
+        x: 0,
+        y: 0,
+        width: containerRect.width / 2,
+        height: containerRect.height,
+        side: "left",
+      };
+    }
+
+    if (mouseX >= containerRect.width - threshold) {
+      return {
+        x: containerRect.width / 2,
+        y: 0,
+        width: containerRect.width / 2,
+        height: containerRect.height,
+        side: "right",
+      };
+    }
+
+    if (mouseY <= threshold) {
+      return {
+        x: 0,
+        y: 0,
+        width: containerRect.width,
+        height: containerRect.height / 2,
+        side: "top",
+      };
+    }
+
+    if (mouseY >= containerRect.height - threshold) {
+      return {
+        x: 0,
+        y: containerRect.height / 2,
+        width: containerRect.width,
+        height: containerRect.height / 2,
+        side: "bottom",
+      };
+    }
+
+    // Check snapped window regions
+    if (snappedLayout) {
+      const snapTarget = findSnapTargetInNode(snappedLayout, mouseX, mouseY);
+      if (snapTarget) return snapTarget;
+    }
+
+    return null;
+  };
+
+  const findSnapTargetInNode = (
+    node: SnapNode,
+    mouseX: number,
+    mouseY: number
+  ): SnapIndicator | null => {
+    // Check if mouse is within this node's bounds (using absolute coordinates)
+    if (
+      mouseX >= node.bounds.x &&
+      mouseX <= node.bounds.x + node.bounds.width &&
+      mouseY >= node.bounds.y &&
+      mouseY <= node.bounds.y + node.bounds.height
+    ) {
+      if (node.type === "window") {
+        // For windows, check which edge is closest
+        const threshold = SNAP_THRESHOLD;
+        const relativeX = mouseX - node.bounds.x;
+        const relativeY = mouseY - node.bounds.y;
+
+        // Determine the longer axis for snapping
+        const isWiderThanTall = node.bounds.width > node.bounds.height;
+
+        if (isWiderThanTall) {
+          // Snap on top or bottom
+          if (relativeY <= threshold) {
+            return {
+              x: node.bounds.x,
+              y: node.bounds.y,
+              width: node.bounds.width,
+              height: node.bounds.height / 2,
+              side: "top",
+              targetNodeId: node.id,
+            };
+          } else if (relativeY >= node.bounds.height - threshold) {
+            return {
+              x: node.bounds.x,
+              y: node.bounds.y + node.bounds.height / 2,
+              width: node.bounds.width,
+              height: node.bounds.height / 2,
+              side: "bottom",
+              targetNodeId: node.id,
+            };
+          }
+        } else {
+          // Snap on left or right
+          if (relativeX <= threshold) {
+            return {
+              x: node.bounds.x,
+              y: node.bounds.y,
+              width: node.bounds.width / 2,
+              height: node.bounds.height,
+              side: "left",
+              targetNodeId: node.id,
+            };
+          } else if (relativeX >= node.bounds.width - threshold) {
+            return {
+              x: node.bounds.x + node.bounds.width / 2,
+              y: node.bounds.y,
+              width: node.bounds.width / 2,
+              height: node.bounds.height,
+              side: "right",
+              targetNodeId: node.id,
+            };
+          }
+        }
+      } else if (node.type === "container" && node.container) {
+        // Recursively check children
+        for (const child of node.container.children) {
+          const result = findSnapTargetInNode(child, mouseX, mouseY);
+          if (result) return result;
+        }
+      }
+    }
+
+    return null;
+  };
+
+  // Snap execution
+  const executeSnap = (windowData: WindowData, indicator: SnapIndicator) => {
+    if (!containerRef.current) return;
+
+    const containerRect = containerRef.current.getBoundingClientRect();
+
+    if (indicator.targetNodeId) {
+      // Snapping to an existing window
+      setSnappedLayout((prev) =>
+        snapToExistingWindow(
+          prev,
+          indicator.targetNodeId!,
+          windowData,
+          indicator.side
+        )
       );
+    } else {
+      // Snapping to screen edge
+      const newWindowNode: SnapNode = {
+        id: windowData.id,
+        type: "window",
+        window: windowData,
+        bounds: {
+          x: indicator.x,
+          y: indicator.y,
+          width: indicator.width,
+          height: indicator.height,
+        },
+      };
+
+      if (snappedLayout) {
+        // Create a new container that splits the screen
+        const direction =
+          indicator.side === "left" || indicator.side === "right"
+            ? "horizontal"
+            : "vertical";
+        const isFirstChild =
+          indicator.side === "left" || indicator.side === "top";
+
+        const containerNode: SnapNode = {
+          id: getId(),
+          type: "container",
+          container: {
+            direction,
+            children: isFirstChild
+              ? [newWindowNode, snappedLayout]
+              : [snappedLayout, newWindowNode],
+            splitRatio: 0.5,
+          },
+          bounds: {
+            x: 0,
+            y: 0,
+            width: containerRect.width,
+            height: containerRect.height,
+          },
+        };
+
+        // Update child bounds to absolute coordinates
+        if (direction === "horizontal" && containerNode.container) {
+          // Horizontal left
+          containerNode.container.children[0].bounds = getWindowConfig(
+            "left",
+            containerRect
+          );
+
+          // Horizontal right
+          containerNode.container.children[1].bounds = getWindowConfig(
+            "right",
+            containerRect
+          );
+        } else if (direction === "vertical" && containerNode.container) {
+          // Vertical top
+          containerNode.container.children[0].bounds = getWindowConfig(
+            "top",
+            containerRect
+          );
+
+          // Vertical bottom
+          containerNode.container.children[1].bounds = getWindowConfig(
+            "bottom",
+            containerRect
+          );
+        }
+
+        setSnappedLayout(containerNode);
+      } else {
+        // First snapped window
+        newWindowNode.bounds = getWindowConfig(indicator.side, containerRect);
+        setSnappedLayout(newWindowNode);
+      }
     }
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
-    if (draggedWindowId && dragOffset) {
-      setFloatingWindows((curWindows) =>
-        curWindows.map((window) => {
-          if (window.id !== draggedWindowId) {
-            return window;
-          }
+  const snapToExistingWindow = (
+    layout: SnapNode | null,
+    targetId: string,
+    newWindow: WindowData,
+    side: "top" | "bottom" | "left" | "right"
+  ): SnapNode | null => {
+    if (!layout) return null;
 
-          return {
-            ...window,
-            x: e.clientX - dragOffset.x,
-            y: e.clientY - dragOffset.y,
-          };
-        })
-      );
+    if (layout.id === targetId && layout.type === "window") {
+      // Replace the target window with a container
+      const direction =
+        side === "left" || side === "right" ? "horizontal" : "vertical";
+      const isNewWindowFirst = side === "left" || side === "top";
+
+      const newWindowNode: SnapNode = {
+        id: newWindow.id,
+        type: "window",
+        window: newWindow,
+        bounds: { x: 0, y: 0, width: 0, height: 0 }, // Will be updated below
+      };
+
+      const existingWindowNode: SnapNode = {
+        ...layout,
+        bounds: { x: 0, y: 0, width: 0, height: 0 }, // Will be updated below
+      };
+
+      const containerNode: SnapNode = {
+        id: getId(),
+        type: "container",
+        container: {
+          direction,
+          children: isNewWindowFirst
+            ? [newWindowNode, existingWindowNode]
+            : [existingWindowNode, newWindowNode],
+          splitRatio: 0.5,
+        },
+        bounds: layout.bounds, // Keep the original window's bounds
+      };
+
+      // Update child bounds to absolute coordinates
+      if (!containerNode.container) {
+        return null;
+      }
+      if (direction === "horizontal") {
+        containerNode.container.children[0].bounds = {
+          x: layout.bounds.x,
+          y: layout.bounds.y,
+          width: layout.bounds.width / 2,
+          height: layout.bounds.height,
+        };
+
+        containerNode.container.children[1].bounds = {
+          x: layout.bounds.x + layout.bounds.width / 2,
+          y: layout.bounds.y,
+          width: layout.bounds.width / 2,
+          height: layout.bounds.height,
+        };
+      } else {
+        containerNode.container.children[0].bounds = {
+          x: layout.bounds.x,
+          y: layout.bounds.y,
+          width: layout.bounds.width,
+          height: layout.bounds.height / 2,
+        };
+
+        containerNode.container.children[1].bounds = {
+          x: layout.bounds.x,
+          y: layout.bounds.y + layout.bounds.height / 2,
+          width: layout.bounds.width,
+          height: layout.bounds.height / 2,
+        };
+      }
+
+      return containerNode;
+    } else if (layout.type === "container" && layout.container) {
+      // Recursively search in children
+      return {
+        ...layout,
+        container: {
+          ...layout.container,
+          children: layout.container.children.map(
+            (child) =>
+              snapToExistingWindow(child, targetId, newWindow, side) || child
+          ),
+        },
+      };
     }
 
-    // check if a dragged window is close to screen edges
-    checkSnapping();
+    return layout;
+  };
+
+  // Mouse event handlers
+  const handleMouseDown = (
+    e: React.MouseEvent,
+    windowId: string,
+    type: "floating" | "snapped"
+  ) => {
+    let offsetX = 0,
+      offsetY = 0;
+
+    if (type === "floating") {
+      const window = floatingWindows.find((w) => w.id === windowId);
+      if (window) {
+        offsetX = e.clientX - window.x;
+        offsetY = e.clientY - window.y;
+      }
+    } else {
+      // For snapped windows, we'll handle dragging out later
+      offsetX = e.clientX;
+      offsetY = e.clientY;
+    }
+
+    setDraggedWindow({
+      id: windowId,
+      type,
+      offset: { x: offsetX, y: offsetY },
+    });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!draggedWindow || !containerRef.current) return;
+
+    const containerRect = containerRef.current.getBoundingClientRect();
+
+    if (draggedWindow.type === "floating") {
+      // Update floating window position
+      const newX = e.clientX - draggedWindow.offset.x;
+      const newY = e.clientY - draggedWindow.offset.y;
+
+      setFloatingWindows((prev) =>
+        prev.map((window) =>
+          window.id === draggedWindow.id
+            ? { ...window, x: newX, y: newY }
+            : window
+        )
+      );
+
+      // Check for snap targets
+      const snapTarget = getSnapTarget(e.clientX, e.clientY, containerRect);
+      setSnapIndicator(snapTarget);
+    } else {
+      // Handle dragging snapped window out
+      const dragDistance =
+        Math.abs(e.clientX - draggedWindow.offset.x) +
+        Math.abs(e.clientY - draggedWindow.offset.y);
+
+      if (dragDistance > DRAG_OUT_THRESHOLD) {
+        // Convert snapped window to floating
+        const snappedNode = findNodeById(snappedLayout, draggedWindow.id);
+        if (snappedNode && snappedNode.window) {
+          const newFloatingWindow: FloatingWindow = {
+            ...snappedNode.window,
+            x: e.clientX - MIN_WIDTH / 2,
+            y: e.clientY - HEADER_HEIGHT / 2,
+            width: MIN_WIDTH,
+            height: MIN_HEIGHT,
+          };
+
+          setFloatingWindows((prev) => [...prev, newFloatingWindow]);
+          setSnappedLayout((prev) => removeNodeById(prev, draggedWindow.id));
+          setDraggedWindow({
+            id: draggedWindow.id,
+            type: "floating",
+            offset: { x: MIN_WIDTH / 2, y: HEADER_HEIGHT / 2 },
+          });
+        }
+      }
+    }
   };
 
   const handleMouseUp = () => {
-    setDraggedWindowId(null);
-    setDragOffset(null);
-  };
+    if (snapIndicator && draggedWindow && draggedWindow.type === "floating") {
+      // Execute the snap
+      const floatingWindow = floatingWindows.find(
+        (w) => w.id === draggedWindow.id
+      );
+      if (floatingWindow) {
+        const windowData: WindowData = {
+          id: floatingWindow.id,
+          color: floatingWindow.color,
+          title: floatingWindow.title,
+        };
 
-  const checkSnapping = () => {
-    if (containerRef.current === null) {
-      return;
-    }
-
-    const { left, right, top, bottom } =
-      containerRef.current.getBoundingClientRect();
-    const draggedWindow = floatingWindows.find(
-      (window) => window.id === draggedWindowId
-    );
-
-    if (!draggedWindow) {
-      setSnapIndicator(null);
-      return;
-    }
-
-    if (draggedWindow.x <= left + SNAP_WIDTH) {
-      // Snapping indicator on the left
-      setSnapIndicator({
-        top: 0,
-        bottom: 0,
-        left: 0,
-        right: right - SNAP_INDICATOR,
-      });
-    } else if (draggedWindow.x + draggedWindow.width >= right - SNAP_WIDTH) {
-      // Snapping indicator on the right
-      setSnapIndicator({
-        top: 0,
-        bottom: 0,
-        left: right - SNAP_INDICATOR,
-        right: 0,
-      });
-    } else if (draggedWindow.y <= top + SNAP_HEIGHT) {
-      // Snapping indicator on the top
-      setSnapIndicator({
-        top: 0,
-        bottom: bottom - SNAP_INDICATOR,
-        left: 0,
-        right: 0,
-      });
-    } else if (draggedWindow.y + draggedWindow.height >= bottom - SNAP_HEIGHT) {
-      // Snapping indicator on the bottom
-      setSnapIndicator({
-        top: bottom - SNAP_INDICATOR,
-        bottom: 0,
-        left: 0,
-        right: 0,
-      });
-    } else {
-      setSnapIndicator(null);
-    }
-  };
-
-  // const spannedWindowsContent = [];
-  useEffect(() => {
-    const renderSnappedWindows = (node: SnappedWindow | null) => {
-      if (node === null) {
-        return;
+        executeSnap(windowData, snapIndicator);
+        deleteFloatingWindow(draggedWindow.id);
       }
-
-      renderSnappedWindows(node.left);
-      setSnappedWindowsArr((curArr) => {
-        return [
-          ...curArr,
-          {
-            id: getId(),
-            x: node.x,
-            y: node.y,
-            width: node.width,
-            height: node.height,
-            background: node.background,
-          },
-        ];
-      });
-      renderSnappedWindows(node.right);
-    };
-
-    if (snappedWindows.root && snappedWindowsArr.length === 0) {
-      renderSnappedWindows(snappedWindows.root);
     }
-  }, [snappedWindows.root, snappedWindowsArr]);
 
-  useEffect(() => {
-    if (containerRef.current) {
-      setSnappedWindows({
-        root: {
-          x: 0,
-          y: 0,
-          width: containerRef.current.getBoundingClientRect().width,
-          height: containerRef.current.getBoundingClientRect().height,
-          background: "none",
-          left: null,
-          right: null,
-        },
-      });
+    setDraggedWindow(null);
+    setSnapIndicator(null);
+  };
+
+  const renderSnappedNode = (node: SnapNode): JSX.Element => {
+    if (node.type === "window" && node.window) {
+      return (
+        <div
+          key={node.id}
+          className="absolute border border-gray-300"
+          style={{
+            left: node.bounds.x, // Direct use - no conversion needed!
+            top: node.bounds.y, // Direct use - no conversion needed!
+            width: node.bounds.width, // Direct use - no conversion needed!
+            height: node.bounds.height, // Direct use - no conversion needed!
+            backgroundColor: node.window.color,
+          }}
+        >
+          <div className="h-[40px] flex justify-between bg-gray-800 text-white">
+            <div
+              onMouseDown={(e) => handleMouseDown(e, node.id, "snapped")}
+              className="flex-1 flex items-center px-2 cursor-grab select-none"
+            >
+              {node.window.title}
+            </div>
+            <button
+              onClick={() => deleteSnappedWindow(node.id)}
+              className="bg-red-600 hover:bg-red-700 w-[40px] flex items-center justify-center"
+            >
+              ×
+            </button>
+          </div>
+          <div className="p-2 h-full overflow-hidden">
+            <div className="text-sm opacity-70">Snapped Window</div>
+          </div>
+        </div>
+      );
+    } else if (node.type === "container" && node.container) {
+      return (
+        <div key={node.id}>
+          {node.container.children.map((child) => renderSnappedNode(child))}
+        </div>
+      );
     }
-  }, [containerRef.current]);
+
+    return <div key={node.id}></div>;
+  };
 
   return (
     <div
       ref={containerRef}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      className="w-screen h-screen relative overflow-hidden"
+      className="w-screen h-screen relative overflow-hidden bg-gray-100"
     >
-      {snappedWindowsArr.map((w, i) => (
-        <div
-          key={w.id}
-          className="absolute"
-          style={{
-            left: w.x,
-            top: w.y,
-            width: w.width,
-            height: w.height,
-            backgroundColor: w.background,
-          }}
-        >
-          {`Node ${i}`}
-        </div>
-      ))}
-      {floatingWindows.map((window, i) => (
+      {/* Snapped windows */}
+      {snappedLayout &&
+        containerRef.current &&
+        renderSnappedNode(snappedLayout)}
+
+      {/* Floating windows */}
+      {floatingWindows.map((window) => (
         <div
           key={window.id}
-          className="absolute"
+          className="absolute border border-gray-400 shadow-lg"
           style={{
             left: window.x,
             top: window.y,
@@ -276,44 +663,50 @@ function App() {
             backgroundColor: window.color,
           }}
         >
-          <div className="h-[50px] flex justify-between">
+          <div className="h-[40px] flex justify-between bg-gray-800 text-white">
             <div
-              onMouseDown={(e) => handleMouseDown(e, window.id)}
-              className={`bg-black h-full w-full ${
-                window.id === draggedWindowId
+              onMouseDown={(e) => handleMouseDown(e, window.id, "floating")}
+              className={`flex-1 flex items-center px-2 select-none ${
+                draggedWindow?.id === window.id
                   ? "cursor-grabbing"
                   : "cursor-grab"
               }`}
-            />
-            <button
-              onClick={() => deleteWindow(window.id)}
-              className="bg-red-800 text-white h-full w-[50px] cursor-pointer"
             >
-              X
+              {window.title}
+            </div>
+            <button
+              onClick={() => deleteFloatingWindow(window.id)}
+              className="bg-red-600 hover:bg-red-700 w-[40px] flex items-center justify-center"
+            >
+              ×
             </button>
           </div>
-          Node {i + 1}
+          <div className="p-2">
+            <div className="text-sm opacity-70">Floating Window</div>
+          </div>
         </div>
       ))}
+
+      {/* Add button */}
       <button
-        onClick={createWindow}
-        className="fixed bottom-10 right-10 w-15 h-15 rounded-full bg-black text-white text-2xl cursor-pointer"
+        onClick={addFloatingWindow}
+        className="cursor-pointer fixed bottom-6 right-6 w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-2xl shadow-lg transition-colors"
       >
         +
       </button>
+
       {/* Snap indicator */}
-      <div
-        className="absolute"
-        style={{
-          backgroundColor: "rgba(255, 0, 0, 0.5)",
-          top: snapIndicator?.top,
-          bottom: snapIndicator?.bottom,
-          left: snapIndicator?.left,
-          right: snapIndicator?.right,
-        }}
-      />
+      {snapIndicator && (
+        <div
+          className="absolute border-2 border-blue-500 bg-blue-200 bg-opacity-50 pointer-events-none"
+          style={{
+            left: snapIndicator.x,
+            top: snapIndicator.y,
+            width: snapIndicator.width,
+            height: snapIndicator.height,
+          }}
+        />
+      )}
     </div>
   );
 }
-
-export default App;
