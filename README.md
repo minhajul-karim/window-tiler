@@ -1,69 +1,67 @@
-# React + TypeScript + Vite
+# Tiling Window Manager
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A React-based tiling window system similar to modern window managers found in Windows and macOS, allowing users to create, drag, and snap windows into organized layouts.
 
-Currently, two official plugins are available:
+## 🎯 The Problem
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+Build a dynamic window management system where:
 
-## Expanding the ESLint configuration
+1. **Window Creation**: Users can create floating windows using a "+" button
+2. **Drag & Drop**: Windows can be dragged around the screen by their title bars
+3. **Smart Snapping**: Windows snap to screen edges and existing windows when dragged within 30px
+4. **Nested Layouts**: Snapped windows can be further subdivided (e.g., snap a window to the left, then snap another to the left window's top half)
+5. **Dynamic Expansion**: When a snapped window is closed, adjacent windows expand to fill the space
+6. **Drag Out**: Snapped windows can be dragged back to floating state
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+The challenge was to handle complex spatial relationships and nested window layouts while maintaining a clean, performant user interface.
 
-```js
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## ✅ What Works
 
-      // Remove tseslint.configs.recommended and replace with this
-      ...tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      ...tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      ...tseslint.configs.stylisticTypeChecked,
+### Core Window Management
+- **Dynamic window creation** with random colors and positions
+- **Smooth drag and drop** with proper offset calculations
+- **Window deletion** with proper cleanup
+- **Floating window management** (fully functional)
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Basic Snapping
+- **Screen edge detection** (left, right, top, bottom)
+- **Snap indicators** with visual feedback
+- **Simple layout creation** (two windows side by side)
+- **Coordinate system consistency** using absolute pixels
+
+### Tree Data Structure
+- **Spatial partitioning tree** implementation
+- **Container and window nodes** with proper hierarchy
+- **Recursive tree operations** (find, remove, render)
+- **Tree traversal** for rendering and manipulation
+
+## 🚧 What's Incomplete or Buggy
+
+#### 1. **Windows are not snapping to nested sides**
+#### 2. **The other windows are not growing and shrinking properly**
+
+
+## 🎓 What I Learned
+
+### Data Structures & Algorithms
+
+#### **Tree Structures**
+- **Binary vs Spatial Trees**: Learned the difference between BSTs (for ordering) and spatial partitioning trees (for 2D layouts)
+- **Tree Traversal**: Implemented recursive traversal for rendering, searching, and manipulation
+- **Tree Balancing**: Understanding when to promote nodes and collapse unnecessary containers
+
+```javascript
+// Key insight: Tree structure mirrors spatial relationships
+Container (horizontal)
+├── Window A [left half]
+└── Container (vertical) [right half]
+    ├── Window B [top-right quarter]
+    └── Window C [bottom-right quarter]
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 🚀 Next Steps
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+To complete this implementation, I would:
 
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+1. **Implement the logic so that windows can be snapped nested inside parent windows.**
+2. **Handle logic for windows to grow & shrink properly keeping in mind their nested behaviour.**
